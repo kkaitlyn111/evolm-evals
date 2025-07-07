@@ -31,7 +31,8 @@ class FineWeb(DataModule):
         super().__init__()
         # Could be a remote path (s3://) or a local path
         self.data_path_train = str(self.data_path).rstrip("/") + "/train"
-        self.required_paths = [self.data_path_train]
+        self.data_path_val = str(self.data_path).rstrip("/") + "/val"
+        self.required_paths = [self.data_path_train, self.data_path_val]
 
     def connect(
         self, tokenizer: Optional[Tokenizer] = None, batch_size: int = 1, max_seq_length: Optional[int] = 2048
@@ -63,4 +64,14 @@ class FineWeb(DataModule):
         return train_dataloader
 
     def val_dataloader(self) -> DataLoader:
-        return None
+        from litgpt.litdata.streaming import StreamingDataLoader, StreamingDataset, TokensLoader
+
+        val_dataset = StreamingDataset(
+            input_dir=self.data_path_val,
+            item_loader=TokensLoader(block_size=self.seq_length),
+            shuffle=False,  # No shuffling for validation
+        )
+        val_dataloader = StreamingDataLoader(
+            val_dataset, batch_size=self.batch_size, pin_memory=True, num_workers=self.num_workers, drop_last=False
+        )
+        return val_dataloader
