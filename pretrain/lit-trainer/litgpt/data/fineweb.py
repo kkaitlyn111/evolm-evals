@@ -69,7 +69,7 @@ class FineWeb(DataModule):
         val_dataset = StreamingDataset(
             input_dir=self.data_path_val,
             item_loader=TokensLoader(block_size=self.seq_length),
-            shuffle=False,  # No shuffling for validation
+            shuffle=False,  # no shuffling for validation
         )
         val_dataloader = StreamingDataLoader(
             val_dataset, batch_size=self.batch_size, pin_memory=True, num_workers=self.num_workers, drop_last=False
