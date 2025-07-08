@@ -47,7 +47,7 @@ SUPPORTED_DATASETS = list(DATASET_EVALUATOR_MAP.keys())
 
 def load_dataset(dataset_name: str) -> List[Dict]:
     """Load a dataset from the cooked data directory."""
-    data_path = f"evaluation/cot-eval-harness/data/cooked/{dataset_name}.jsonl"
+    data_path = f"cot-eval-harness/data/cooked/{dataset_name}.jsonl"
     
     if not os.path.exists(data_path):
         raise FileNotFoundError(f"Dataset {dataset_name} not found at {data_path}")
