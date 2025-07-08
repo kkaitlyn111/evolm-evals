@@ -1,0 +1,6 @@
+torch>=2.0.0
+transformers>=4.36.0
+vllm>=0.2.7
+numpy>=1.24.0
+tqdm>=4.64.0
+accelerate>=0.24.0 
