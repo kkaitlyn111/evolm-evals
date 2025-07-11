@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple modular evaluation script for zero-shot accuracy and log likelihood evaluation.
-Evaluates a single model on a single dataset for easy batching with Slurm.
-Supports all mathematical reasoning datasets in the codebase.
+modular eval script for single model + single dataset
 """
 
 import os
@@ -44,9 +42,8 @@ DATASET_EVALUATOR_MAP = {
 
 SUPPORTED_DATASETS = list(DATASET_EVALUATOR_MAP.keys())
 
-
+# load data from cooked directory
 def load_dataset(dataset_name: str) -> List[Dict]:
-    """Load a dataset from the cooked data directory."""
     data_path = f"cot-eval-harness/data/cooked/{dataset_name}.jsonl"
     
     if not os.path.exists(data_path):
@@ -60,10 +57,9 @@ def load_dataset(dataset_name: str) -> List[Dict]:
     print(f"Loaded {len(data)} examples from {dataset_name}")
     return data
 
-
+# load from HF
 def load_model_and_tokenizer(model_name: str, device: str = "cuda"):
-    """Load HuggingFace model and tokenizer."""
-    print(f"Loading model: {model_name}")
+    print(f"loading model: {model_name}")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -80,17 +76,16 @@ def load_model_and_tokenizer(model_name: str, device: str = "cuda"):
         model = model.to(device)
     
     model.eval()
-    print(f"Model loaded on device: {next(model.parameters()).device}")
+    print(f"model loaded on device: {next(model.parameters()).device}")
     return model, tokenizer
 
 
+# zero-shot format question
 def format_problem_prompt(problem: str) -> str:
-    """Format the problem as a zero-shot prompt."""
     return f"Solve the following problem step by step.\n\nProblem: {problem}\n\nSolution:"
 
-
+# gen single response from model (use HF forward pass)
 def generate_response(model, tokenizer, prompt: str, max_new_tokens: int = 512, temperature: float = 0.0) -> str:
-    """Generate a single response from the model."""
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
     
@@ -104,7 +99,7 @@ def generate_response(model, tokenizer, prompt: str, max_new_tokens: int = 512, 
             eos_token_id=tokenizer.eos_token_id
         )
     
-    # Extract only the generated part
+    # extract only the generated part
     generated_tokens = outputs[0][inputs['input_ids'].shape[1]:]
     response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
     return response.strip()
@@ -114,9 +109,9 @@ def generate_multiple_responses(model, tokenizer, prompt: str, k: int = 10, max_
     """Generate k responses with increasing temperature for top-k evaluation."""
     responses = []
     
-    # Generate responses with increasing temperature
+    # generate responses with increasing temperature
     for i in range(k):
-        # Temperature increases from 0.0 (greedy) to 1.0
+        # temperature increases from 0.0 (greedy) to 1.0
         temperature = i * 0.1 if i > 0 else 0.0
         response = generate_response(model, tokenizer, prompt, max_new_tokens, temperature)
         responses.append(response)
@@ -128,11 +123,11 @@ def compute_log_likelihood(model, tokenizer, prompt: str, target_text: str) -> f
     """Compute log likelihood of target_text given the prompt."""
     full_text = prompt + target_text
     
-    # Tokenize the full text
+    # tokenize the full text
     inputs = tokenizer(full_text, return_tensors="pt", truncation=True, max_length=2048)
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
     
-    # Tokenize just the prompt to know where target starts
+    # tokenize just the prompt to know where target starts
     prompt_inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
     prompt_length = prompt_inputs['input_ids'].shape[1]
     
@@ -140,10 +135,10 @@ def compute_log_likelihood(model, tokenizer, prompt: str, target_text: str) -> f
         outputs = model(**inputs)
         logits = outputs.logits
     
-    # Get log probabilities
+    # get log probabilities
     log_probs = torch.log_softmax(logits, dim=-1)
     
-    # Extract log probabilities for the target tokens
+    # extract log probabilities for the target tokens
     target_tokens = inputs['input_ids'][0][prompt_length:]
     target_log_probs = []
     
@@ -155,7 +150,7 @@ def compute_log_likelihood(model, tokenizer, prompt: str, target_text: str) -> f
     if len(target_log_probs) == 0:
         return float('-inf')
     
-    # Return average log likelihood per token
+    # return average log likelihood per token
     return np.mean(target_log_probs)
 
 
