@@ -46,7 +46,7 @@ SUPPORTED_DATASETS = list(DATASET_EVALUATOR_MAP.keys())
 
 
 def load_dataset(dataset_name: str) -> List[Dict]:
-    """Load a dataset from the cooked data directory."""
+    """load a dataset from the cooked data directory."""
     data_path = f"cot-eval-harness/data/cooked/{dataset_name}.jsonl"
     
     if not os.path.exists(data_path):
@@ -57,40 +57,66 @@ def load_dataset(dataset_name: str) -> List[Dict]:
         for line in f:
             data.append(json.loads(line.strip()))
     
-    print(f"Loaded {len(data)} examples from {dataset_name}")
+    print(f"loaded {len(data)} examples from {dataset_name}")
     return data
 
 
 def load_model_and_tokenizer(model_name: str, device: str = "cuda"):
-    """Load HuggingFace model and tokenizer."""
-    print(f"Loading model: {model_name}")
+    """load HuggingFace model and tokenizer."""
+    print(f"loading model: {model_name}")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    HF_CACHE_DIR = "/juice5b/scr5b/kaitwang/cache/huggingface"
     
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         device_map="auto" if device == "cuda" else None,
-        trust_remote_code=True
+        trust_remote_code=True,
+        cache_dir=HF_CACHE_DIR
     )
     
     if device != "cuda":
         model = model.to(device)
     
     model.eval()
-    print(f"Model loaded on device: {next(model.parameters()).device}")
+    print(f"model loaded on device: {next(model.parameters()).device}")
     return model, tokenizer
 
 
 def format_problem_prompt(problem: str) -> str:
-    """Format the problem as a zero-shot prompt."""
-    return f"Solve the following problem step by step.\n\nProblem: {problem}\n\nSolution:"
+    """Format the problem using the standard cot-eval-harness prompt."""
+    return f"""Solve the following problem efficiently and clearly:
 
+- For simple problems (2 steps or fewer):
+Provide a concise solution with minimal explanation.
+
+- For complex problems (3 steps or more):
+Use this step-by-step format:
+
+## Step 1: [Concise description]
+[Brief explanation and calculations]
+
+## Step 2: [Concise description]
+[Brief explanation and calculations]
+
+...
+
+Regardless of the approach, always conclude with:
+
+Therefore, the final answer is: $\\boxed{{answer}}$. I hope it is correct.
+
+Where [answer] is just the final number or expression that solves the problem.
+
+Problem: {problem}"""
+
+# huggingface direct response generation
 
 def generate_response(model, tokenizer, prompt: str, max_new_tokens: int = 512, temperature: float = 0.0) -> str:
-    """Generate a single response from the model."""
+    """generate a single response from the model."""
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
     
