@@ -1,4 +1,7 @@
 {
+  "gsm8k": {
+    "file_name": "gsm8k_sft_formatted.json"
+  },
   "identity": {
     "file_name": "identity.json"
   },
