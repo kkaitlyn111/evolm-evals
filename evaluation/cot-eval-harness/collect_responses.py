@@ -17,6 +17,21 @@ from functools import partial
 pprint = partial(custom_print, fname=os.path.basename(__file__), color="green")
 device = torch.device('cuda')
 
+def calculate_ground_truth_log_probs(hf_model, hf_tokenizer, prompts: list[str], ground_truth_solutions:list[str]):
+        log_probs = []
+        for prompt, gt_CoT in zip(prompts, ground_truth_solutions):
+            full_text = prompt + gt_CoT
+            inputs = hf_tokenizer(full_text, return_tensors="pt")
+            inputs = {key: value.to(device) for key, value in inputs.items()}
+            with torch.no_grad():
+                outputs = hf_model(**inputs)
+                prompt_len = len(hf_tokenizer(prompt, return_tensors="pt").input_ids[0])
+                gt_log_probs = outputs.logits[0, prompt_len-1:-1]  # -1 to predict the next token
+                log_prob = gt_log_probs.log_softmax(-1).gather(-1, inputs["input_ids"][0, prompt_len:].unsqueeze(-1)).sum()
+                log_probs.append(log_prob.item())
+        return log_probs
+
+
 
 def load_model(model_ckpt_dir, api, max_model_len, tensor_parallel_size, model_seed):
     if api == "vllm":
@@ -28,14 +43,32 @@ def load_model(model_ckpt_dir, api, max_model_len, tensor_parallel_size, model_s
             tensor_parallel_size=tensor_parallel_size,
             enable_prefix_caching=True,
         )
-    elif api == "hf":
-        raise NotImplementedError("HF API not supported")
+
+    else:
+        raise NotImplementedError(f"API {api} not supported")
+    
+    return model
+
+def load_hf_model(model_ckpt_dir, model_hf_path, api, max_model_len, tensor_parallel_size, model_seed):
+    if api == "hf":
+        torch.manual_seed(model_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(model_seed)
         
-        model = AutoModelForCausalLM.from_pretrained(
-            model_ckpt_dir,
-            torch_dtype="auto",
-            device_map="auto"
-        )
+        if os.path.exists(model_ckpt_dir):
+            model = AutoModelForCausalLM.from_pretrained(
+                model_ckpt_dir,
+                torch_dtype="auto",
+                device_map="auto"
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_hf_path,
+                torch_dtype="auto",
+                device_map="auto",
+                trust_remote_code=True
+            )
+        
         model.to(device)
     else:
         raise NotImplementedError(f"API {api} not supported")
@@ -87,7 +120,7 @@ def prepare_prompt(
             )
     else:
         prompt = system_prompt + "\n\n" if system_prompt is not None else ""
-        prompt += input_wrapper.replace("<<<wrapped_input>>>", question)
+        prompt += input_wrapper.replace("<<<input>>>", question)
     
     return prompt
 
@@ -175,6 +208,15 @@ def main(args):
     #! Load model
     pprint(f"Loading model from {args.model_ckpt_dir}...")
     model = load_model(args.model_ckpt_dir, args.api, args.max_model_len, args.tensor_parallel_size, args.seed)
+
+    hf_model = None
+    hf_tokenizer = None
+    if args.model_hf_ckpt_dir is not None or args.model_hf_path is not None:
+        pprint(f"Loading hf model from {args.model_hf_ckpt_dir, args.model_hf_path}...")
+        hf_model = load_hf_model(args.model_hf_ckpt_dir, args.model_hf_path, "hf", args.max_model_len, args.tensor_parallel_size, args.seed)
+        hf_tokenizer = AutoTokenizer.from_pretrained(args.model_hf_ckpt_dir if args.model_hf_ckpt_dir else args.model_hf_path, padding_side="left")
+        hf_tokenizer.pad_token = hf_tokenizer.eos_token
+        hf_tokenizer.pad_token_id = hf_tokenizer.eos_token_id
     
     #! Prepare generation kwargs
     gen_kwargs = {
@@ -277,6 +319,11 @@ def main(args):
                     batch_token_cnts.append(token_cnts)
                 assert len(batch_candidates) == len(batch_token_cnts) == len(batch_id)
                 
+                if hf_model is not None:
+                    gt_log_probs = calculate_ground_truth_log_probs(hf_model, hf_tokenizer, batch_prompt, batch_solution)
+                else:
+                    gt_log_probs = [None] * len(batch_id)
+                
                 # Save responses
                 for i in range(len(batch_id)):
                     id_ = batch_id[i]
@@ -286,6 +333,7 @@ def main(args):
                     answer = batch_answer[i]
                     candidates = batch_candidates[i]
                     token_cnts = batch_token_cnts[i]
+                    gt_log_prob = gt_log_probs[i]
                     assert len(candidates) == len(token_cnts) == args.num_generations
                     js_dict = {
                         "id": id_,
@@ -293,6 +341,7 @@ def main(args):
                         "prompt": prompt,
                         "gt_solution": solution,
                         "gt_answer": answer,
+                        "gt_log_prob": gt_log_prob,
                         "model_responses": [{"text": c, "num_tokens": t} for c, t in zip(candidates, token_cnts)]
                     }
                     results.append(js_dict)
@@ -329,6 +378,8 @@ if __name__ == "__main__":
     # llm
     parser.add_argument("--api", type=str, choices=["vllm", "hf"], default="vllm")
     parser.add_argument("--model_ckpt_dir", type=str, required=True)
+    parser.add_argument("--model_hf_ckpt_dir", type=str, default=None)
+    parser.add_argument("--model_hf_path", type=str, default=None)
     parser.add_argument("--model_id_for_saving", type=str, required=True)
     parser.add_argument("--max_new_tokens", type=int, default=4096)
     parser.add_argument("--repetition_penalty", type=float, default=1.0)

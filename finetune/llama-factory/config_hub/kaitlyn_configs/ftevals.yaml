@@ -5,7 +5,7 @@ model_name_or_path: zhenting/myllama-1B-160BT-cpt-MixedFW8FM42
 stage: sft
 do_train: true
 finetuning_type: full
-deepspeed: finetune/llama-factory/config_hub/official_configs/deepspeed/ds_z3_config.json  # choices: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
+deepspeed: finetune/llama-factory/config_hub/official_configs/deepspeed/ds_z2_config.json  # choices: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
 
 ### dataset
 dataset: gsm8k
@@ -17,11 +17,14 @@ overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: /juice5b/scr5b/kaitwang/evolm-evals/finetune/llama-factory/output_sft_models/myllama-1B-1600BT-cpt-MixedFW8FM42-finetuned-gsm8k-full280k
+output_dir: /juice5b/scr5b/kaitwang/evolm-evals/finetune/llama-factory/output_sft_models/myllama-1B-160BT-cpt-MixedFW8FM42-finetuned-gsm8k-test20k
 logging_steps: 10
 save_steps: 1000
+save_total_limit: 3
+save_strategy: steps
 plot_loss: true
 overwrite_output_dir: true
+save_safetensors: true
 
 ### train
 # 4 * 32 * 1 GPU = 128 | 4 * 16 * 2 GPU = 128 | 4 * 8 * 4 GPU = 128 | 4 * 4 * 8 GPU = 128
@@ -34,10 +37,17 @@ warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
 do_eval: false
+gradient_checkpointing: true
+dataloader_pin_memory: false
+remove_unused_columns: false
+load_best_model_at_end: false
+metric_for_best_model: null
+greater_is_better: null
+# resume_from_checkpoint: /juice5b/scr5b/kaitwang/evolm-evals/finetune/llama-factory/output_sft_models/myllama-1B-1600BT-cpt-MixedFW8FM42-finetuned-gsm8k-full280k/checkpoint-1000
 
 ### wandb
 report_to: wandb
-run_name: myllama-1B-1600BT-cpt-MixedFW8FM42-finetuned-gsm8k-full280k
+run_name: myllama-1B-160BT-cpt-MixedFW8FM42-finetuned-gsm8k-test20k
 # optional: specify project and entity
 # project: evolm-FT-evals
 # tags: ["cpt", "1B"]

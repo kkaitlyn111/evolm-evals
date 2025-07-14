@@ -15,7 +15,6 @@ from functools import partial
 
 pprint = partial(custom_print, fname=os.path.basename(__file__), color="blue")
 
-
 def main(args):
     with open(args.prompt_config_file, "r") as f:
         prompt_config = json.load(f)
